@@ -37,7 +37,7 @@ namespace {
     bool runOnFunction(Function &F) override {
       outs() << F.getName() << "\n";
       
-      buildBBMap(F);
+      preprocess(F);
       computeLoops(F);
 
       return true;
@@ -48,12 +48,13 @@ namespace {
     std::map<StringRef, std::vector<StringRef>> preds;
     std::vector<std::set<StringRef>> loops;
     
-    void buildBBMap(Function& F) {
+    void preprocess(Function& F) {
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         bbMap[bb->getName()] = bb;
         preds[bb->getName()] = std::vector<StringRef>();
       }
 
+      // Construct predecessors map.
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         auto t = bb->getTerminator();
         int n = t->getNumSuccessors();
@@ -69,6 +70,8 @@ namespace {
     std::set<StringRef> intersectPredecessorsDOM(
       Function::iterator bb, const DomSet& dom) {
       std::set<StringRef> r;
+      // Traverse all predessors of one basic block
+      // and do the intersection.
       for (auto pred : preds[bb->getName()]) {
         auto d = dom.find(pred)->second;
         if (r.empty())
@@ -91,18 +94,23 @@ namespace {
       std::set<StringRef> a;
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         if (bb->getName() == F.getEntryBlock().getName()) {
+          // The entry block dominates itself.
           std::set<StringRef> s;
           s.insert(bb->getName());
           dom[bb->getName()] = s;
         }
+        // Compute the set of all blocks.
         a.insert(bb->getName());
       }
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         if (bb->getName() != F.getEntryBlock().getName()) {
+          // All blocks except the entry
+          // gets the set of all blocks.
           dom[bb->getName()] = a;
         }
       }
-      // Compute dominator sets.
+      // Compute dominator sets iteratively
+      // until no modification is made.
       bool modified = false;
       do {
         modified = false;
