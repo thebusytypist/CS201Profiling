@@ -1,5 +1,5 @@
 /*
- * Authors: Name(s) <email(s)>
+ * Authors: Ounan Ding <oding001@ucr.edu>
  * 
  */
 
