@@ -46,7 +46,7 @@ namespace {
   private:
     std::map<StringRef, Function::iterator> bbMap;
     std::map<StringRef, std::vector<StringRef>> preds;
-    std::vector<std::vector<Function::iterator>> loops;
+    std::vector<std::set<StringRef>> loops;
     
     void buildBBMap(Function& F) {
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
@@ -84,10 +84,8 @@ namespace {
       }
       return r;
     }
-
-    void computeLoops(Function& F) {
-      loops.clear();
-
+    
+    DomSet computeDOMSet(Function& F) {
       // Initialize dominator sets.
       DomSet dom;
       std::set<StringRef> a;
@@ -117,10 +115,51 @@ namespace {
           }
         }
       } while (modified);
-      for (auto i : dom) {
-        outs() << i.first << ": ";
-        for (auto d : i.second) {
-          outs() << d << " ";
+      
+      return dom;
+    }
+
+    std::set<StringRef> computeLoop(const StringRef& s, const StringRef& t) {
+      std::set<StringRef> r;
+      r.insert(t);
+
+      std::vector<StringRef> stack;
+      stack.push_back(s);
+
+      while (!stack.empty()) {
+        StringRef u = stack.back();
+        stack.pop_back();
+        r.insert(u);
+        for (auto pred : preds[u]) {
+          if (r.find(pred) == r.end()) {
+            stack.push_back(pred);
+          }
+        }
+      }
+      return r;
+    }
+
+    void computeLoops(Function& F) {
+      loops.clear();
+
+      DomSet dom = computeDOMSet(F);
+      // Find back edges.
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        auto t = bb->getTerminator();
+        int n = t->getNumSuccessors();
+        for (int i = 0; i < n; ++i) {
+          StringRef head = t->getSuccessor(i)->getName();
+          auto d = dom[bb->getName()];
+          if (d.find(head) != d.end()) {
+            outs() << bb->getName() << " -> " << head << "\n";
+            loops.push_back(computeLoop(bb->getName(), head));
+          }
+        }
+      }
+      outs() << "loops:\n";
+      for (auto l : loops) {
+        for (auto i : l) {
+          outs() << i << " ";
         }
         outs() << "\n";
       }
