@@ -20,12 +20,12 @@ namespace {
   CS201Profiling() : FunctionPass(ID) {}
 
     //----------------------------------
-    bool doInitialization(Module &M) {
+    bool doInitialization(Module &M) override {
       return false;
     }
 
     //----------------------------------
-    bool doFinalization(Module &M) {
+    bool doFinalization(Module &M) override {
       return false;
     }
     
