@@ -94,7 +94,6 @@ namespace {
 
     Function* printfFunction;
 
-    std::map<StringRef, Function::iterator> bbMap;
     std::map<StringRef, int> bbID;
     std::map<StringRef, std::vector<StringRef>> preds;
     std::vector<std::set<StringRef>> loops;
@@ -157,7 +156,6 @@ namespace {
       int id = 0;
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         bbID[bb->getName()] = id++;
-        bbMap[bb->getName()] = bb;
         preds[bb->getName()] = std::vector<StringRef>();
       }
 
