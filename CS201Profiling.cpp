@@ -32,7 +32,7 @@ namespace {
       context = &M.getContext();
 
       // Initialize frequently used constants.
-      zero = ConstantInt::get(*context, APInt(32, StringRef("0"), 10));
+      zero32 = ConstantInt::get(*context, APInt(32, StringRef("0"), 10));
 
       // Preprocess all modules to compute the number of counters.
       preprocessModule(M);
@@ -40,7 +40,8 @@ namespace {
       // Allocate counters.
       allocateCounters(M);
 
-      formatStr = createStaticString(M, "Counter: %d\n");
+      // Allocate static strings.
+      allocateStaticStrings(M);
       
       // Declare external function printf.
       std::vector<Type*> argTypes;
@@ -97,12 +98,14 @@ namespace {
     }
   
   private:
-    Constant* zero;
+    Constant* zero32;
 
     LLVMContext* context;
 
     GlobalVariable* bbCounters;
-    GlobalVariable* formatStr;
+    GlobalVariable* fmtBBProf;
+    GlobalVariable* bbProfTitle;
+    std::vector<GlobalVariable*> bbNames;
 
     Function* printfFunction;
     
@@ -145,9 +148,27 @@ namespace {
         "bbCounters");
     }
 
+    void allocateStaticStrings(Module& M) {
+      // Allocate basic block name.
+      bbNames.resize(bbID.size());
+      for (auto f = M.begin(); f != M.end(); ++f) {
+        for (auto bb = f->begin(); bb != f->end(); ++bb) {
+          int id = bbID[make_pair(f->getName(), bb->getName())];
+          Twine text = f->getName() + "::" + bb->getName();
+          bbNames[id] = createStaticString(M, text.str().c_str());
+        }
+      }
+
+      // Create format string for basic block profiling.
+      fmtBBProf = createStaticString(M, "%s: %d\n");
+
+      // Create report title for basic block profiling.
+      bbProfTitle = createStaticString(M, "BASIC BLOCK PROFILING:\n");
+    }
+
     Constant* indexArray1D(GlobalVariable* arr, int i) {
       std::vector<Constant*> indices;
-      indices.push_back(zero);
+      indices.push_back(zero32);
       ConstantInt* ci = ConstantInt::get(*context,
         APInt(64, i, 10));
       indices.push_back(ci);
@@ -169,8 +190,8 @@ namespace {
       GlobalVariable* fmt,
       const std::vector<Value*>& args) {
       std::vector<Constant*> indices;
-      indices.push_back(zero);
-      indices.push_back(zero);
+      indices.push_back(zero32);
+      indices.push_back(zero32);
       Constant* c = ConstantExpr::getGetElementPtr(fmt, indices);
       
       // Push the format string.
@@ -178,8 +199,7 @@ namespace {
       loadedArgs.push_back(c);
       // Load all other arguments.
       for (auto arg : args) {
-        Value* x = builder.CreateLoad(arg);
-        loadedArgs.push_back(x);
+        loadedArgs.push_back(arg);
       }
 
       CallInst* call = builder.CreateCall(
@@ -189,8 +209,16 @@ namespace {
 
     void instrumentDisplay(IRBuilder<>& builder) {
       std::vector<Value*> args;
-      args.push_back(indexArray1D(bbCounters, 4));
-      invokePrint(builder, formatStr, args);
+      // Print title.
+      invokePrint(builder, bbProfTitle, args);
+
+      args.resize(2);
+      for (auto i : bbID) {
+        int id = i.second;
+        args[0] = indexArray1D(bbNames[id], 0);
+        args[1] = builder.CreateLoad(indexArray1D(bbCounters, id));
+        invokePrint(builder, fmtBBProf, args);
+      }
     }
     
     void preprocessModule(Module& M) {
