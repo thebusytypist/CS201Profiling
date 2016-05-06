@@ -48,7 +48,7 @@ namespace {
         ConstantInt::get(Type::getInt32Ty(*context), 0),
         "counter");
       
-      formatStr = defineFormatStr(M, "Counter: %d\n");
+      formatStr = createStaticString(M, "Counter: %d\n");
       
       // Declare external function printf.
       std::vector<Type*> argTypes;
@@ -116,16 +116,16 @@ namespace {
     std::map<StringRef, std::vector<StringRef>> preds;
     std::vector<std::set<StringRef>> loops;
 
-    GlobalVariable* defineFormatStr(Module& M, const char* fmt) {
+    GlobalVariable* createStaticString(Module& M, const char* text) {
       // Define format string for printf.
-      Constant* value = ConstantDataArray::getString(*context, fmt);
+      Constant* value = ConstantDataArray::getString(*context, text);
       auto r = new GlobalVariable(
         M,
-        ArrayType::get(IntegerType::get(*context, 8), strlen(fmt) + 1),
+        ArrayType::get(IntegerType::get(*context, 8), strlen(text) + 1),
         true,
         GlobalValue::PrivateLinkage,
         value,
-        "formatStr");
+        "staticstr");
       return r;
     }
 
