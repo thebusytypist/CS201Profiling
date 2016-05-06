@@ -37,6 +37,9 @@ namespace {
       // Preprocess all modules to compute the number of counters.
       preprocessModule(M);
 
+      // Allocate counters.
+      allocateCounters(M);
+
       counter = new GlobalVariable(
         M,
         Type::getInt32Ty(*context),
@@ -101,6 +104,7 @@ namespace {
     LLVMContext* context;
 
     GlobalVariable* counter;
+    GlobalVariable* bbCounters;
     GlobalVariable* formatStr;
 
     Function* printfFunction;
@@ -123,6 +127,25 @@ namespace {
         value,
         "formatStr");
       return r;
+    }
+
+    void allocateCounters(Module& M) {
+      int n = bbID.size();
+
+      // Define types.
+      ArrayType* Int1D = ArrayType::get(IntegerType::get(*context, 32), n);
+
+      // Global variable initializers.
+      ConstantAggregateZero* init1D = ConstantAggregateZero::get(Int1D);
+
+      // Define gloal variables(counters).
+      bbCounters = new GlobalVariable(
+        M,
+        Int1D,
+        false,
+        GlobalValue::ExternalLinkage,
+        init1D,
+        "bbCounters");
     }
 
     void increaseCounter(BasicBlock& bb, Value* value) {
