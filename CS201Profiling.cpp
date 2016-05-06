@@ -18,6 +18,8 @@
 #include <memory>
 using namespace llvm;
 using std::unique_ptr;
+using std::pair;
+using std::make_pair;
 
  
 namespace {
@@ -28,6 +30,12 @@ namespace {
     //----------------------------------
     bool doInitialization(Module &M) override {
       context = &M.getContext();
+
+      // Initialize frequently used constants.
+      zero = ConstantInt::get(*context, APInt(32, StringRef("0"), 10));
+
+      // Preprocess all modules to compute the number of counters.
+      preprocessModule(M);
 
       counter = new GlobalVariable(
         M,
@@ -67,9 +75,10 @@ namespace {
     
     //----------------------------------
     bool runOnFunction(Function &F) override {
-      outs() << F.getName() << "\n";
+      functionName = F.getName();
+      outs() << functionName << "\n";
       
-      preprocess(F);
+      preprocessFunction(F);
       computeLoops(F);
 
       if (F.getName() == "main") {
@@ -87,14 +96,19 @@ namespace {
     }
   
   private:
+    Constant* zero;
+
     LLVMContext* context;
 
     GlobalVariable* counter;
     GlobalVariable* formatStr;
 
     Function* printfFunction;
+    
+    // <functionName, bbName> -> bbID
+    std::map<pair<StringRef, StringRef>, int> bbID;
 
-    std::map<StringRef, int> bbID;
+    StringRef functionName;
     std::map<StringRef, std::vector<StringRef>> preds;
     std::vector<std::set<StringRef>> loops;
 
@@ -126,8 +140,6 @@ namespace {
       GlobalVariable* fmt,
       const std::vector<Value*>& args) {
       std::vector<Constant*> indices;
-      Constant* zero = Constant::getNullValue(
-        IntegerType::getInt32Ty(*context));
       indices.push_back(zero);
       indices.push_back(zero);
       Constant* c = ConstantExpr::getGetElementPtr(fmt, indices);
@@ -151,11 +163,22 @@ namespace {
       args.push_back(counter);
       invokePrint(builder, formatStr, args);
     }
-
-    void preprocess(Function& F) {
+    
+    void preprocessModule(Module& M) {
+      bbID.clear();
       int id = 0;
+      for (auto f = M.begin(); f != M.end(); ++f) {
+        for (auto bb = f->begin(); bb != f->end(); ++bb) {
+          auto k = make_pair(f->getName(), bb->getName());
+          bbID[k] = id++;
+        }
+      }
+      outs() << "Total number of BB: " << id << "\n";
+    }
+
+    void preprocessFunction(Function& F) {
+      preds.clear();
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
-        bbID[bb->getName()] = id++;
         preds[bb->getName()] = std::vector<StringRef>();
       }
 
