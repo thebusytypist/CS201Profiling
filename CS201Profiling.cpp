@@ -40,14 +40,6 @@ namespace {
       // Allocate counters.
       allocateCounters(M);
 
-      counter = new GlobalVariable(
-        M,
-        Type::getInt32Ty(*context),
-        false,
-        GlobalValue::InternalLinkage,
-        ConstantInt::get(Type::getInt32Ty(*context), 0),
-        "counter");
-      
       formatStr = createStaticString(M, "Counter: %d\n");
       
       // Declare external function printf.
@@ -84,6 +76,12 @@ namespace {
       preprocessFunction(F);
       computeLoops(F);
 
+      // Instrument counters.
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        int id = bbID[make_pair(functionName, bb->getName())];
+        increaseCounter(bb, indexArray1D(bbCounters, id));
+      }
+
       if (F.getName() == "main") {
         for (auto bb = F.begin(); bb != F.end(); ++bb) {
           if (isa<ReturnInst>(bb->getTerminator())) {
@@ -103,7 +101,6 @@ namespace {
 
     LLVMContext* context;
 
-    GlobalVariable* counter;
     GlobalVariable* bbCounters;
     GlobalVariable* formatStr;
 
@@ -148,9 +145,18 @@ namespace {
         "bbCounters");
     }
 
-    void increaseCounter(BasicBlock& bb, Value* value) {
+    Constant* indexArray1D(GlobalVariable* arr, int i) {
+      std::vector<Constant*> indices;
+      indices.push_back(zero);
+      ConstantInt* ci = ConstantInt::get(*context,
+        APInt(64, i, 10));
+      indices.push_back(ci);
+      return ConstantExpr::getGetElementPtr(arr, indices);
+    }
+
+    void increaseCounter(BasicBlock* bb, Value* value) {
       IRBuilder<> builder(
-        bb.getFirstInsertionPt());
+        bb->getFirstInsertionPt());
 
       Value* loaded = builder.CreateLoad(value);
       Value* added = builder.CreateAdd(
@@ -183,7 +189,7 @@ namespace {
 
     void instrumentDisplay(IRBuilder<>& builder) {
       std::vector<Value*> args;
-      args.push_back(counter);
+      args.push_back(indexArray1D(bbCounters, 4));
       invokePrint(builder, formatStr, args);
     }
     
