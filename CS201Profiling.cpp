@@ -21,8 +21,8 @@ using std::unique_ptr;
 using std::pair;
 using std::make_pair;
 
-static const char* SEPERATOR = "===========================";
-static const char* SEPERATOR2 = "---------------------------";
+static const char* SEPERATOR = "===========================\n";
+static const char* SEPERATOR2 = "---------------------------\n";
 
 cl::opt<bool> dumpBasicBlock(
   "dumpbb",
@@ -79,11 +79,11 @@ namespace {
     //----------------------------------
     bool runOnFunction(Function &F) override {
       functionName = F.getName();
-      outs() << SEPERATOR << "\n";
+      outs() << SEPERATOR;
       outs() << "FUNCTION: " << functionName << "\n";
 
       // Display basic blocks.
-      outs() << SEPERATOR2 << "\nBASIC BLOCKS: " << F.size() << "\n";
+      outs() << SEPERATOR2 << "BASIC BLOCKS: " << F.size() << "\n";
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         outs() << bb->getName() << "\n";
         if (dumpBasicBlock)
@@ -120,8 +120,11 @@ namespace {
 
     GlobalVariable* bbCounters;
     GlobalVariable* fmtBBProf;
+    GlobalVariable* fmtFunctionTitle;
     GlobalVariable* bbProfTitle;
+    GlobalVariable* profSeperator2;
     std::vector<GlobalVariable*> bbNames;
+    std::vector<GlobalVariable*> functionNames;
 
     Function* printfFunction;
     
@@ -165,21 +168,24 @@ namespace {
     }
 
     void allocateStaticStrings(Module& M) {
-      // Allocate basic block name.
+      // Allocate basic block and function names.
       bbNames.resize(bbID.size());
+      functionNames.resize(bbID.size());
       for (auto f = M.begin(); f != M.end(); ++f) {
         for (auto bb = f->begin(); bb != f->end(); ++bb) {
           int id = bbID[make_pair(f->getName(), bb->getName())];
-          Twine text = f->getName() + "::" + bb->getName();
-          bbNames[id] = createStaticString(M, text.str().c_str());
+          bbNames[id] = createStaticString(M, bb->getName().data());
+          functionNames[id] = createStaticString(M, f->getName().data());
         }
       }
 
-      // Create format string for basic block profiling.
+      // Create format strings.
       fmtBBProf = createStaticString(M, "%s: %d\n");
+      fmtFunctionTitle = createStaticString(M, "FUNCTION %s\n");
 
-      // Create report title for basic block profiling.
+      // Create other strings.
       bbProfTitle = createStaticString(M, "BASIC BLOCK PROFILING:\n");
+      profSeperator2 = createStaticString(M, SEPERATOR2);
     }
 
     Constant* indexArray1D(GlobalVariable* arr, int i) {
@@ -229,8 +235,24 @@ namespace {
       invokePrint(builder, bbProfTitle, args);
 
       args.resize(2);
+      StringRef prev("");
       for (auto i : bbID) {
         int id = i.second;
+
+        if (i.first.first != prev) {
+          // Display the function name.
+          prev = i.first.first;
+
+          invokePrint(builder, profSeperator2, std::vector<Value*>());
+
+          std::vector<Value*> a;
+          a.push_back(indexArray1D(functionNames[id], 0));
+          invokePrint(
+            builder,
+            fmtFunctionTitle,
+            a);
+        }
+
         args[0] = indexArray1D(bbNames[id], 0);
         args[1] = builder.CreateLoad(indexArray1D(bbCounters, id));
         invokePrint(builder, fmtBBProf, args);
@@ -325,7 +347,7 @@ namespace {
       } while (modified);
 
       // Output dominator sets.
-      outs() << SEPERATOR2 << "\nDOMINATOR SETS:\n";
+      outs() << SEPERATOR2 << "DOMINATOR SETS:\n";
       for (auto bb : dom) {
         outs() << bb.first << " => ";
         for (auto d : bb.second) {
@@ -376,7 +398,7 @@ namespace {
       }
 
       // Output loops.
-      outs() << SEPERATOR2 << "\nLOOPS: " << loops.size() << "\n";
+      outs() << SEPERATOR2 << "LOOPS: " << loops.size() << "\n";
       int k = 0;
       for (auto l : loops) {
         outs() << "loop" << k << ": ";
