@@ -37,17 +37,7 @@ namespace {
         ConstantInt::get(Type::getInt32Ty(*context), 0),
         "counter");
       
-      // Define format string for printf.
-      const char* text = "Counter: %d\n";
-      Constant* value = ConstantDataArray::getString(
-        *context, text);
-      formatStr = new GlobalVariable(
-        M,
-        ArrayType::get(IntegerType::get(*context, 8), strlen(text) + 1),
-        true,
-        GlobalValue::PrivateLinkage,
-        value,
-        "formatStr");
+      formatStr = defineFormatStr(M, "Counter: %d\n");
       
       // Declare external function printf.
       std::vector<Type*> argTypes;
@@ -83,7 +73,14 @@ namespace {
       computeLoops(F);
 
       if (F.getName() == "main") {
-        invokePrint(F);
+        for (auto bb = F.begin(); bb != F.end(); ++bb) {
+          if (isa<ReturnInst>(bb->getTerminator())) {
+            // Insert print functions just before the exit of program.
+            IRBuilder<> builder(bb->getTerminator());
+            instrumentDisplay(builder);
+            break;
+          }
+        }
       }
 
       return true;
@@ -102,6 +99,19 @@ namespace {
     std::map<StringRef, std::vector<StringRef>> preds;
     std::vector<std::set<StringRef>> loops;
 
+    GlobalVariable* defineFormatStr(Module& M, const char* fmt) {
+      // Define format string for printf.
+      Constant* value = ConstantDataArray::getString(*context, fmt);
+      auto r = new GlobalVariable(
+        M,
+        ArrayType::get(IntegerType::get(*context, 8), strlen(fmt) + 1),
+        true,
+        GlobalValue::PrivateLinkage,
+        value,
+        "formatStr");
+      return r;
+    }
+
     void increaseCounter(BasicBlock& bb, Value* value) {
       IRBuilder<> builder(
         bb.getFirstInsertionPt());
@@ -112,28 +122,35 @@ namespace {
       builder.CreateStore(added, value);
     }
 
-    void invokePrint(Function& F) {
-      for (auto bb = F.begin(); bb != F.end(); ++bb) {
-        if (isa<ReturnInst>(bb->getTerminator())) {
-          IRBuilder<> builder(bb->getTerminator());
-          std::vector<Constant*> indices;
-          Constant* zero = Constant::getNullValue(
-            IntegerType::getInt32Ty(*context));
-          indices.push_back(zero);
-          indices.push_back(zero);
-          Constant* c = ConstantExpr::getGetElementPtr(formatStr, indices);
-
-          Value* loaded = builder.CreateLoad(counter);
-
-          std::vector<Value*> args;
-          args.push_back(c);
-          args.push_back(loaded);
-          CallInst* call = builder.CreateCall(
-            printfFunction, args, "call");
-          call->setTailCall(false);
-          break;
-        }
+    void invokePrint(
+      IRBuilder<>& builder,
+      GlobalVariable* fmt,
+      const std::vector<Value*>& args) {
+      std::vector<Constant*> indices;
+      Constant* zero = Constant::getNullValue(
+        IntegerType::getInt32Ty(*context));
+      indices.push_back(zero);
+      indices.push_back(zero);
+      Constant* c = ConstantExpr::getGetElementPtr(fmt, indices);
+      
+      // Push the format string.
+      std::vector<Value*> loadedArgs;
+      loadedArgs.push_back(c);
+      // Load all other arguments.
+      for (auto arg : args) {
+        Value* x = builder.CreateLoad(arg);
+        loadedArgs.push_back(x);
       }
+
+      CallInst* call = builder.CreateCall(
+        printfFunction, loadedArgs, "call");
+      call->setTailCall(false);
+    }
+
+    void instrumentDisplay(IRBuilder<>& builder) {
+      std::vector<Value*> args;
+      args.push_back(counter);
+      invokePrint(builder, formatStr, args);
     }
 
     void preprocess(Function& F) {
