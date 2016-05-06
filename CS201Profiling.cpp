@@ -91,7 +91,6 @@ namespace {
   
   private:
     LLVMContext* context;
-    Module* module;
 
     GlobalVariable* counter;
     GlobalVariable* formatStr;
