@@ -21,7 +21,13 @@ using std::unique_ptr;
 using std::pair;
 using std::make_pair;
 
- 
+static const char* SEPERATOR = "===========================";
+static const char* SEPERATOR2 = "---------------------------";
+
+cl::opt<bool> dumpBasicBlock(
+  "dumpbb",
+  cl::desc("Dump basic block textural IR."));
+
 namespace {
   struct CS201Profiling : public FunctionPass {
     static char ID;
@@ -66,14 +72,24 @@ namespace {
 
     //----------------------------------
     bool doFinalization(Module &M) override {
+      outs() << "\nEND OF ANALYSIS\n\n";
       return false;
     }
     
     //----------------------------------
     bool runOnFunction(Function &F) override {
       functionName = F.getName();
-      outs() << functionName << "\n";
-      
+      outs() << SEPERATOR << "\n";
+      outs() << "FUNCTION: " << functionName << "\n";
+
+      // Display basic blocks.
+      outs() << SEPERATOR2 << "\nBASIC BLOCKS: " << F.size() << "\n";
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        outs() << bb->getName() << "\n";
+        if (dumpBasicBlock)
+          bb->dump();
+      }
+
       preprocessFunction(F);
       computeLoops(F);
 
@@ -230,7 +246,6 @@ namespace {
           bbID[k] = id++;
         }
       }
-      outs() << "Total number of BB: " << id << "\n";
     }
 
     void preprocessFunction(Function& F) {
@@ -308,6 +323,16 @@ namespace {
           }
         }
       } while (modified);
+
+      // Output dominator sets.
+      outs() << SEPERATOR2 << "\nDOMINATOR SETS:\n";
+      for (auto bb : dom) {
+        outs() << bb.first << " => ";
+        for (auto d : bb.second) {
+          outs() << d << ", ";
+        }
+        outs() << "\n";
+      }
       
       return dom;
     }
@@ -349,10 +374,14 @@ namespace {
           }
         }
       }
-      outs() << "loops:\n";
+
+      // Output loops.
+      outs() << SEPERATOR2 << "\nLOOPS: " << loops.size() << "\n";
+      int k = 0;
       for (auto l : loops) {
+        outs() << "loop" << k << ": ";
         for (auto i : l) {
-          outs() << i << " ";
+          outs() << i << ", ";
         }
         outs() << "\n";
       }
