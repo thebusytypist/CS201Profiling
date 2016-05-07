@@ -15,9 +15,7 @@
 #include <vector>
 #include <iterator>
 #include <algorithm>
-#include <memory>
 using namespace llvm;
-using std::unique_ptr;
 using std::pair;
 using std::make_pair;
 
@@ -43,32 +41,16 @@ namespace {
       // Preprocess all modules to compute the number of counters.
       preprocessModule(M);
 
-      // Allocate counters.
-      allocateCounters(M);
+      // Allocate global variables(e.g. counters, names).
+      allocateGlobalVariables(M);
 
       // Allocate static strings.
       allocateStaticStrings(M);
       
-      // Declare external function printf.
-      std::vector<Type*> argTypes;
-      argTypes.push_back(Type::getInt8PtrTy(*context));
-
-      FunctionType* type = FunctionType::get(
-        Type::getInt32Ty(*context),
-        argTypes,
-        true);
-      printfFunction = M.getFunction("printf");
-      if (!printfFunction) {
-        printfFunction = Function::Create(
-          type,
-          Function::ExternalLinkage,
-          Twine("printf"),
-          &M);
-      }
-      printfFunction->setCallingConv(CallingConv::C);
-
       // Declare external function to output profiling results.
       std::vector<Type*> outputArgTypes;
+      outputArgTypes.push_back(Type::getInt8PtrTy(*context)->getPointerTo());
+      outputArgTypes.push_back(Type::getInt8PtrTy(*context)->getPointerTo());
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32Ty(*context));
       
@@ -81,6 +63,7 @@ namespace {
         Function::ExternalLinkage,
         Twine("outputProfilingResult"),
         &M);
+      outputFunction->setCallingConv(CallingConv::C);
       
       return false;
     }
@@ -133,7 +116,7 @@ namespace {
           if (isa<ReturnInst>(bb->getTerminator())) {
             // Insert print functions just before the exit of program.
             IRBuilder<> builder(bb->getTerminator());
-            instrumentDisplay(builder);
+            buildNameArrays(builder);
             invokeDisplay(builder);
             break;
           }
@@ -148,21 +131,16 @@ namespace {
 
     LLVMContext* context;
 
+    GlobalVariable* bbNameArray;
+    GlobalVariable* bbFunctionNameArray;
+
     GlobalVariable* lastBB;
     GlobalVariable* bbCounters;
     GlobalVariable* edgeCounters;
 
-    GlobalVariable* fmtBBProf;
-    GlobalVariable* fmtFunctionTitle;
-
-    GlobalVariable* bbProfTitle;
-    GlobalVariable* edgeProfTitle;
-    GlobalVariable* profSeperator2;
-
     std::vector<GlobalVariable*> bbNames;
     std::vector<GlobalVariable*> functionNames;
 
-    Function* printfFunction;
     Function* outputFunction;
     
     // <functionName, bbName> -> bbID
@@ -185,7 +163,7 @@ namespace {
       return r;
     }
 
-    void allocateCounters(Module& M) {
+    void allocateGlobalVariables(Module& M) {
       int n = bbID.size();
 
       // Variable to keep track of the last executed basic block.
@@ -200,12 +178,33 @@ namespace {
       // Define types.
       ArrayType* Int1D = ArrayType::get(IntegerType::get(*context, 32), n);
       ArrayType* Int2D = ArrayType::get(Int1D, n);
+      PointerType* CharPtr = PointerType::get(
+        IntegerType::get(*context, 8), 0);
+      ArrayType* CharPtr1D = ArrayType::get(CharPtr, n);
 
       // Global variable initializers.
       ConstantAggregateZero* init1D = ConstantAggregateZero::get(Int1D);
       ConstantAggregateZero* init2D = ConstantAggregateZero::get(Int2D);
+      ConstantAggregateZero* initCharPtr1D =
+        ConstantAggregateZero::get(CharPtr1D);
 
-      // Define gloal variables(counters).
+      // Define gloal variables.
+      bbNameArray = new GlobalVariable(
+        M,
+        CharPtr1D,
+        false,
+        GlobalValue::ExternalLinkage,
+        initCharPtr1D,
+        "bbNames");
+
+      bbFunctionNameArray = new GlobalVariable(
+        M,
+        CharPtr1D,
+        false,
+        GlobalValue::ExternalLinkage,
+        initCharPtr1D,
+        "bbFunctionNames");
+
       bbCounters = new GlobalVariable(
         M,
         Int1D,
@@ -234,15 +233,6 @@ namespace {
           functionNames[id] = createStaticString(M, f->getName().data());
         }
       }
-
-      // Create format strings.
-      fmtBBProf = createStaticString(M, "%s: %d\n");
-      fmtFunctionTitle = createStaticString(M, "FUNCTION %s\n");
-
-      // Create other strings.
-      bbProfTitle = createStaticString(M, "BASIC BLOCK PROFILING:\n");
-      edgeProfTitle = createStaticString(M, "\nEDGE PROFILING:\n");
-      profSeperator2 = createStaticString(M, SEPARATOR2);
     }
 
     Constant* indexArray1D(GlobalVariable* arr, int i) {
@@ -273,7 +263,6 @@ namespace {
         APInt(64, j, 10));
       indices.push_back(ci);
       return builder.CreateGEP(arr, indices);
-      // return ConstantExpr::getGetElementPtr(arr, indices);
     }
 
     void increaseCounter(IRBuilder<>& builder, Value* value) {
@@ -283,32 +272,15 @@ namespace {
       builder.CreateStore(added, value);
     }
 
-    void invokePrint(
-      IRBuilder<>& builder,
-      GlobalVariable* fmt,
-      const std::vector<Value*>& args) {
-      std::vector<Constant*> indices;
-      indices.push_back(zero32);
-      indices.push_back(zero32);
-      Constant* c = ConstantExpr::getGetElementPtr(fmt, indices);
-      
-      // Push the format string.
-      std::vector<Value*> loadedArgs;
-      loadedArgs.push_back(c);
-      // Load all other arguments.
-      for (auto arg : args) {
-        loadedArgs.push_back(arg);
-      }
-
-      CallInst* call = builder.CreateCall(
-        printfFunction, loadedArgs, "call");
-      call->setTailCall(false);
-    }
-
     void invokeDisplay(IRBuilder<>& builder) {
       std::vector<Constant*> indices;
       indices.push_back(zero32);
       indices.push_back(zero32);
+
+      Constant* pbbFunctionNames =
+        ConstantExpr::getGetElementPtr(bbFunctionNameArray, indices);
+      Constant* pbbNames =
+        ConstantExpr::getGetElementPtr(bbNameArray, indices);
       Constant* pbbCounters =
         ConstantExpr::getGetElementPtr(bbCounters, indices);
 
@@ -316,6 +288,8 @@ namespace {
         APInt(32, bbID.size(), 10));
 
       std::vector<Value*> args;
+      args.push_back(pbbFunctionNames);
+      args.push_back(pbbNames);
       args.push_back(pbbCounters);
       args.push_back(n);
 
@@ -324,49 +298,23 @@ namespace {
       call->setTailCall(false);
     }
 
-    void instrumentDisplay(IRBuilder<>& builder) {
-      instrumentBBProfilingDisplay(builder);
-      instrumentEdgeProfilingDisplay(builder);
-    }
-
-    void instrumentBBProfilingDisplay(IRBuilder<>& builder) {
-      std::vector<Value*> args;
-      // Print title.
-      invokePrint(builder, bbProfTitle, args);
-
-      args.resize(2);
-      StringRef prev("");
-      for (auto i : bbID) {
-        int id = i.second;
+    void buildNameArrays(IRBuilder<>& builder) {
+      for (auto x : bbID) {
+        auto functionName = x.first.first;
+        auto bbName = x.first.second;
+        int id = x.second;
         if (id == 0) {
           // Omit the dummy root node.
           continue;
         }
 
-        if (i.first.first != prev) {
-          // Display the function name.
-          prev = i.first.first;
-
-          invokePrint(builder, profSeperator2, std::vector<Value*>());
-
-          std::vector<Value*> a;
-          a.push_back(indexArray1D(functionNames[id], 0));
-          invokePrint(
-            builder,
-            fmtFunctionTitle,
-            a);
-        }
-
-        args[0] = indexArray1D(bbNames[id], 0);
-        args[1] = builder.CreateLoad(indexArray1D(bbCounters, id));
-        invokePrint(builder, fmtBBProf, args);
+        builder.CreateStore(
+          indexArray1D(functionNames[id], 0),
+          indexArray1D(bbFunctionNameArray, id));
+        builder.CreateStore(
+          indexArray1D(bbNames[id], 0),
+          indexArray1D(bbNameArray, id));
       }
-    }
-
-    void instrumentEdgeProfilingDisplay(IRBuilder<>& builder) {
-      std::vector<Value*> args;
-      // Print title.
-      invokePrint(builder, edgeProfTitle, args);
     }
     
     void preprocessModule(Module& M) {
