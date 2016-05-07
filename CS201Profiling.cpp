@@ -66,6 +66,21 @@ namespace {
           &M);
       }
       printfFunction->setCallingConv(CallingConv::C);
+
+      // Declare external function to output profiling results.
+      std::vector<Type*> outputArgTypes;
+      outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32Ty(*context));
+      
+      FunctionType* outputType = FunctionType::get(
+        Type::getVoidTy(*context),
+        outputArgTypes,
+        false);
+      outputFunction = Function::Create(
+        outputType,
+        Function::ExternalLinkage,
+        Twine("outputProfilingResult"),
+        &M);
       
       return false;
     }
@@ -119,6 +134,7 @@ namespace {
             // Insert print functions just before the exit of program.
             IRBuilder<> builder(bb->getTerminator());
             instrumentDisplay(builder);
+            invokeDisplay(builder);
             break;
           }
         }
@@ -147,6 +163,7 @@ namespace {
     std::vector<GlobalVariable*> functionNames;
 
     Function* printfFunction;
+    Function* outputFunction;
     
     // <functionName, bbName> -> bbID
     std::map<pair<StringRef, StringRef>, int> bbID;
@@ -285,6 +302,25 @@ namespace {
 
       CallInst* call = builder.CreateCall(
         printfFunction, loadedArgs, "call");
+      call->setTailCall(false);
+    }
+
+    void invokeDisplay(IRBuilder<>& builder) {
+      std::vector<Constant*> indices;
+      indices.push_back(zero32);
+      indices.push_back(zero32);
+      Constant* pbbCounters =
+        ConstantExpr::getGetElementPtr(bbCounters, indices);
+
+      ConstantInt* n = ConstantInt::get(*context,
+        APInt(32, bbID.size(), 10));
+
+      std::vector<Value*> args;
+      args.push_back(pbbCounters);
+      args.push_back(n);
+
+      CallInst* call = builder.CreateCall(
+        outputFunction, args, "");
       call->setTailCall(false);
     }
 
