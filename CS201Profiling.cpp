@@ -53,6 +53,9 @@ namespace {
       outputArgTypes.push_back(Type::getInt8PtrTy(*context)->getPointerTo());
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32Ty(*context));
       outputArgTypes.push_back(Type::getInt32Ty(*context));
       
       FunctionType* outputType = FunctionType::get(
@@ -92,37 +95,13 @@ namespace {
       preprocessFunction(F);
       computeLoops(F);
 
-      // Instrument counters.
-      for (auto bb = F.begin(); bb != F.end(); ++bb) {
-        int id = bbID[make_pair(functionName, bb->getName())];
-
-        IRBuilder<> builder(
-          bb->getFirstInsertionPt());
-
-        // Update basic block counter.
-        increaseCounter(builder, indexArray1D(bbCounters, id));
-
-        // Update edge counter.
-        Value* i = loadAndCastInt(builder, lastBB);
-        Value* edge = indexArray2D(builder, edgeCounters, i, id);
-        increaseCounter(builder, edge);
-
-        // Update last executed basic block.
-        ConstantInt* n = ConstantInt::get(*context, APInt(32, id, 10));
-        builder.CreateStore(n, lastBB);
-      }
+      instrumentFunction(F);
 
       if (F.getName() == "main") {
-        for (auto bb = F.begin(); bb != F.end(); ++bb) {
-          if (isa<ReturnInst>(bb->getTerminator())) {
-            // Insert print functions just before the exit of program.
-            IRBuilder<> builder(bb->getTerminator());
-            buildNameArrays(builder);
-            invokeDisplay(builder);
-            break;
-          }
-        }
+        instrumentMainFunction(F);
       }
+
+      currentLoopID = loops.size();
 
       return true;
     }
@@ -142,14 +121,20 @@ namespace {
     std::vector<GlobalVariable*> bbNames;
     std::vector<GlobalVariable*> functionNames;
 
+    GlobalVariable* backEdgeHeads;
+    GlobalVariable* backEdgeTails;
+
     Function* outputFunction;
     
     // <functionName, bbName> -> bbID
     std::map<pair<StringRef, StringRef>, int> bbID;
+    std::map<int, StringRef> invbbID;
+    std::vector<std::set<int>> loops;
+    std::vector<int> tails, heads;
+    int currentLoopID;
 
     StringRef functionName;
     std::map<StringRef, std::vector<StringRef>> preds;
-    std::vector<std::set<StringRef>> loops;
 
     GlobalVariable* createStaticString(Module& M, const char* text) {
       // Define format string for printf.
@@ -221,6 +206,22 @@ namespace {
         GlobalValue::ExternalLinkage,
         init2D,
         "edgeCounters");
+
+      backEdgeHeads = new GlobalVariable(
+        M,
+        Int1D,
+        false,
+        GlobalValue::ExternalLinkage,
+        init1D,
+        "backEdgeHeads");
+
+      backEdgeTails = new GlobalVariable(
+        M,
+        Int1D,
+        false,
+        GlobalValue::ExternalLinkage,
+        init1D,
+        "backEdgeTails");
     }
 
     void allocateStaticStrings(Module& M) {
@@ -290,20 +291,77 @@ namespace {
       Constant* pbbNames = indexArray1D(bbNameArray, 0);
       Constant* pbbCounters = indexArray1D(bbCounters, 0);
       Constant* pedgeCounters = indexArray2D(edgeCounters, 0, 0);
+      Constant* pbackEdgeTails = indexArray1D(backEdgeTails, 0);
+      Constant* pbackEdgeHeads = indexArray1D(backEdgeHeads, 0);
 
       ConstantInt* n = ConstantInt::get(*context,
         APInt(32, bbID.size(), 10));
+
+      ConstantInt* nloop = ConstantInt::get(*context,
+        APInt(32, loops.size(), 10));
 
       std::vector<Value*> args;
       args.push_back(pbbFunctionNames);
       args.push_back(pbbNames);
       args.push_back(pbbCounters);
       args.push_back(pedgeCounters);
+      args.push_back(pbackEdgeTails);
+      args.push_back(pbackEdgeHeads);
       args.push_back(n);
+      args.push_back(nloop);
 
       CallInst* call = builder.CreateCall(
         outputFunction, args, "");
       call->setTailCall(false);
+    }
+
+    void instrumentFunction(Function& F) {
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        int id = bbID[make_pair(functionName, bb->getName())];
+
+        IRBuilder<> builder(
+          bb->getFirstInsertionPt());
+
+        // Update basic block counter.
+        increaseCounter(builder, indexArray1D(bbCounters, id));
+
+        // Update edge counter.
+        Value* i = loadAndCastInt(builder, lastBB);
+        Value* edge = indexArray2D(builder, edgeCounters, i, id);
+        increaseCounter(builder, edge);
+
+        // Update last executed basic block.
+        ConstantInt* n = ConstantInt::get(*context, APInt(32, id, 10));
+        builder.CreateStore(n, lastBB);
+      }
+    }
+
+    void instrumentMainFunction(Function& F) {
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        if (isa<ReturnInst>(bb->getTerminator())) {
+          // Insert print functions just before the exit of program.
+          IRBuilder<> builder(bb->getTerminator());
+          buildNameArrays(builder);
+          buildLoops(builder);
+          invokeDisplay(builder);
+          break;
+        }
+      }
+    }
+    
+    void buildLoops(IRBuilder<>& builder) {
+      for (int i = 0; i < (int)loops.size(); ++i) {
+        int tail = tails[i];
+        int head = heads[i];
+
+        builder.CreateStore(
+          ConstantInt::get(*context, APInt(32, tail, 10)),
+          indexArray1D(backEdgeTails, i));
+
+        builder.CreateStore(
+          ConstantInt::get(*context, APInt(32, head, 10)),
+          indexArray1D(backEdgeHeads, i));
+      }
     }
 
     void buildNameArrays(IRBuilder<>& builder) {
@@ -324,17 +382,25 @@ namespace {
     }
     
     void preprocessModule(Module& M) {
+      currentLoopID = 0;
+      loops.clear();
+      tails.clear();
+      heads.clear();
+
       bbID.clear();
+      invbbID.clear();
       int id = 0;
 
       // Add a dummy node here.
       // This makes edge counting easier
       // since we do not need to consider the root node case.
+      invbbID[id] = "";
       bbID[make_pair("", "")] = id++;
 
       for (auto f = M.begin(); f != M.end(); ++f) {
         for (auto bb = f->begin(); bb != f->end(); ++bb) {
           auto k = make_pair(f->getName(), bb->getName());
+          invbbID[id] = bb->getName();
           bbID[k] = id++;
         }
       }
@@ -429,20 +495,21 @@ namespace {
       return dom;
     }
 
-    std::set<StringRef> computeLoop(const StringRef& s, const StringRef& t) {
-      std::set<StringRef> r;
-      r.insert(t);
+    std::set<int> computeLoop(const StringRef& s, const StringRef& t) {
+      std::set<int> r;
+      r.insert(bbID[make_pair(functionName, t)]);
 
-      std::vector<StringRef> stack;
-      stack.push_back(s);
+      std::vector<int> stack;
+      stack.push_back(bbID[make_pair(functionName, s)]);
 
       while (!stack.empty()) {
-        StringRef u = stack.back();
+        int u = stack.back();
         stack.pop_back();
         r.insert(u);
-        for (auto pred : preds[u]) {
-          if (r.find(pred) == r.end()) {
-            stack.push_back(pred);
+        for (auto pred : preds[invbbID[u]]) {
+          int id = bbID[make_pair(functionName, pred)];
+          if (r.find(id) == r.end()) {
+            stack.push_back(id);
           }
         }
       }
@@ -450,8 +517,6 @@ namespace {
     }
 
     void computeLoops(Function& F) {
-      loops.clear();
-
       DomSet dom = computeDOMSet(F);
       // Find back edges.
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
@@ -462,18 +527,21 @@ namespace {
           auto d = dom[bb->getName()];
           if (d.find(head) != d.end()) {
             outs() << bb->getName() << " -> " << head << "\n";
+
+            tails.push_back(bbID[make_pair(functionName, bb->getName())]);
+            heads.push_back(bbID[make_pair(functionName, head)]);
             loops.push_back(computeLoop(bb->getName(), head));
           }
         }
       }
 
       // Output loops.
-      outs() << SEPARATOR2 << "LOOPS: " << loops.size() << "\n";
-      int k = 0;
-      for (auto l : loops) {
-        outs() << "loop" << k << ": ";
-        for (auto i : l) {
-          outs() << i << ", ";
+      outs() << SEPARATOR2 << "LOOPS: "
+        << loops.size() - currentLoopID << "\n";
+      for (int j = currentLoopID, size = loops.size(); j < size; ++j) {
+        outs() << "loop" << j << ": ";
+        for (auto i : loops[j]) {
+          outs() << invbbID[i] << ", ";
         }
         outs() << "\n";
       }

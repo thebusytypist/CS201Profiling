@@ -1,5 +1,7 @@
 #include <cstring>
 #include <cstdio>
+#include <typeinfo>
+#include <algorithm>
 using namespace std;
 
 #define SEPARATOR "---------------------------\n"
@@ -9,7 +11,9 @@ extern "C" void outputProfilingResult(
   const char** bbNames,
   int* bbCounters,
   int* edgeCountersFlat,
-  int n) {
+  int* backEdgeTails,
+  int* backEdgeHeads,
+  int n, int nloop) {
 
   auto edgeCounters = reinterpret_cast<int (*)[n]>(edgeCountersFlat);
 
@@ -41,6 +45,21 @@ extern "C" void outputProfilingResult(
       printf("%s (ID: %d) -> %s (ID: %d): %d\n",
         bbNames[i], i, bbNames[j], j, edgeCounters[i][j]);
     }
+  }
+
+  printf("\nLOOP PROFILING:\n");
+  prev = "";
+  for (int i = 0; i < nloop; ++i) {
+    if (strcmp(prev, bbFunctionNames[backEdgeTails[i]]) != 0) {
+      printf(SEPARATOR);
+      printf("FUNCTION %s\n", bbFunctionNames[backEdgeTails[i]]);
+      prev = bbFunctionNames[backEdgeTails[i]];
+    }
+
+    int tail = backEdgeTails[i];
+    int head = backEdgeHeads[i];
+    int count = min(bbCounters[tail], bbCounters[head]);
+    printf("loop%d: %d\n", i, count);
   }
 }
 
