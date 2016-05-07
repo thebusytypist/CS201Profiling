@@ -308,8 +308,6 @@ namespace {
 
     void buildNameArrays(IRBuilder<>& builder) {
       for (auto x : bbID) {
-        auto functionName = x.first.first;
-        auto bbName = x.first.second;
         int id = x.second;
         if (id == 0) {
           // Omit the dummy root node.
