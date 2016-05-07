@@ -52,6 +52,7 @@ namespace {
       outputArgTypes.push_back(Type::getInt8PtrTy(*context)->getPointerTo());
       outputArgTypes.push_back(Type::getInt8PtrTy(*context)->getPointerTo());
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32Ty(*context));
       
       FunctionType* outputType = FunctionType::get(
@@ -265,6 +266,18 @@ namespace {
       return builder.CreateGEP(arr, indices);
     }
 
+    Constant* indexArray2D(GlobalVariable* arr, int i, int j) {
+      std::vector<Constant*> indices;
+      indices.push_back(zero32);
+      ConstantInt* ci = ConstantInt::get(*context,
+        APInt(64, i, 10));
+      ConstantInt* cj = ConstantInt::get(*context,
+        APInt(64, j, 10));
+      indices.push_back(ci);
+      indices.push_back(cj);
+      return ConstantExpr::getGetElementPtr(arr, indices);
+    }
+
     void increaseCounter(IRBuilder<>& builder, Value* value) {
       Value* loaded = builder.CreateLoad(value);
       Value* added = builder.CreateAdd(
@@ -273,16 +286,10 @@ namespace {
     }
 
     void invokeDisplay(IRBuilder<>& builder) {
-      std::vector<Constant*> indices;
-      indices.push_back(zero32);
-      indices.push_back(zero32);
-
-      Constant* pbbFunctionNames =
-        ConstantExpr::getGetElementPtr(bbFunctionNameArray, indices);
-      Constant* pbbNames =
-        ConstantExpr::getGetElementPtr(bbNameArray, indices);
-      Constant* pbbCounters =
-        ConstantExpr::getGetElementPtr(bbCounters, indices);
+      Constant* pbbFunctionNames = indexArray1D(bbFunctionNameArray, 0);
+      Constant* pbbNames = indexArray1D(bbNameArray, 0);
+      Constant* pbbCounters = indexArray1D(bbCounters, 0);
+      Constant* pedgeCounters = indexArray2D(edgeCounters, 0, 0);
 
       ConstantInt* n = ConstantInt::get(*context,
         APInt(32, bbID.size(), 10));
@@ -291,6 +298,7 @@ namespace {
       args.push_back(pbbFunctionNames);
       args.push_back(pbbNames);
       args.push_back(pbbCounters);
+      args.push_back(pedgeCounters);
       args.push_back(n);
 
       CallInst* call = builder.CreateCall(
