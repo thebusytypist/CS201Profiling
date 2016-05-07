@@ -96,7 +96,21 @@ namespace {
       // Instrument counters.
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         int id = bbID[make_pair(functionName, bb->getName())];
-        increaseCounter(bb, indexArray1D(bbCounters, id));
+
+        IRBuilder<> builder(
+          bb->getFirstInsertionPt());
+
+        // Update basic block counter.
+        increaseCounter(builder, indexArray1D(bbCounters, id));
+
+        // Update edge counter.
+        Value* i = loadAndCastInt(builder, lastBB);
+        Value* edge = indexArray2D(builder, edgeCounters, i, id);
+        increaseCounter(builder, edge);
+
+        // Update last executed basic block.
+        ConstantInt* n = ConstantInt::get(*context, APInt(32, id, 10));
+        builder.CreateStore(n, lastBB);
       }
 
       if (F.getName() == "main") {
@@ -118,11 +132,17 @@ namespace {
 
     LLVMContext* context;
 
+    GlobalVariable* lastBB;
     GlobalVariable* bbCounters;
+    GlobalVariable* edgeCounters;
+
     GlobalVariable* fmtBBProf;
     GlobalVariable* fmtFunctionTitle;
+
     GlobalVariable* bbProfTitle;
+    GlobalVariable* edgeProfTitle;
     GlobalVariable* profSeperator2;
+
     std::vector<GlobalVariable*> bbNames;
     std::vector<GlobalVariable*> functionNames;
 
@@ -151,11 +171,22 @@ namespace {
     void allocateCounters(Module& M) {
       int n = bbID.size();
 
+      // Variable to keep track of the last executed basic block.
+      lastBB = new GlobalVariable(
+        M,
+        Type::getInt32Ty(*context),
+        false,
+        GlobalValue::ExternalLinkage,
+        ConstantInt::get(Type::getInt32Ty(*context), 0),
+        "lastBB");
+
       // Define types.
       ArrayType* Int1D = ArrayType::get(IntegerType::get(*context, 32), n);
+      ArrayType* Int2D = ArrayType::get(Int1D, n);
 
       // Global variable initializers.
       ConstantAggregateZero* init1D = ConstantAggregateZero::get(Int1D);
+      ConstantAggregateZero* init2D = ConstantAggregateZero::get(Int2D);
 
       // Define gloal variables(counters).
       bbCounters = new GlobalVariable(
@@ -165,6 +196,14 @@ namespace {
         GlobalValue::ExternalLinkage,
         init1D,
         "bbCounters");
+
+      edgeCounters = new GlobalVariable(
+        M,
+        Int2D,
+        false,
+        GlobalValue::ExternalLinkage,
+        init2D,
+        "edgeCounters");
     }
 
     void allocateStaticStrings(Module& M) {
@@ -185,6 +224,7 @@ namespace {
 
       // Create other strings.
       bbProfTitle = createStaticString(M, "BASIC BLOCK PROFILING:\n");
+      edgeProfTitle = createStaticString(M, "\nEDGE PROFILING:\n");
       profSeperator2 = createStaticString(M, SEPERATOR2);
     }
 
@@ -197,10 +237,29 @@ namespace {
       return ConstantExpr::getGetElementPtr(arr, indices);
     }
 
-    void increaseCounter(BasicBlock* bb, Value* value) {
-      IRBuilder<> builder(
-        bb->getFirstInsertionPt());
+    Value* loadAndCastInt(IRBuilder<>& builder, GlobalVariable* v) {
+      // Load and cast integer to index array.
+      Value* loaded = builder.CreateLoad(v);
+      Value* r = builder.CreateSExt(loaded, IntegerType::get(*context, 32));
+      return r;
+    }
 
+    Value* indexArray2D(
+      IRBuilder<>& builder,
+      GlobalVariable* arr,
+      Value* i, int j) {
+      // Use indirect indexing for the first dimension.
+      std::vector<Value*> indices;
+      indices.push_back(zero32);
+      indices.push_back(i);
+      ConstantInt* ci = ConstantInt::get(*context,
+        APInt(64, j, 10));
+      indices.push_back(ci);
+      return builder.CreateGEP(arr, indices);
+      // return ConstantExpr::getGetElementPtr(arr, indices);
+    }
+
+    void increaseCounter(IRBuilder<>& builder, Value* value) {
       Value* loaded = builder.CreateLoad(value);
       Value* added = builder.CreateAdd(
         ConstantInt::get(Type::getInt32Ty(*context), 1), loaded);
@@ -230,6 +289,11 @@ namespace {
     }
 
     void instrumentDisplay(IRBuilder<>& builder) {
+      instrumentBBProfilingDisplay(builder);
+      instrumentEdgeProfilingDisplay(builder);
+    }
+
+    void instrumentBBProfilingDisplay(IRBuilder<>& builder) {
       std::vector<Value*> args;
       // Print title.
       invokePrint(builder, bbProfTitle, args);
@@ -238,6 +302,10 @@ namespace {
       StringRef prev("");
       for (auto i : bbID) {
         int id = i.second;
+        if (id == 0) {
+          // Omit the dummy root node.
+          continue;
+        }
 
         if (i.first.first != prev) {
           // Display the function name.
@@ -258,10 +326,22 @@ namespace {
         invokePrint(builder, fmtBBProf, args);
       }
     }
+
+    void instrumentEdgeProfilingDisplay(IRBuilder<>& builder) {
+      std::vector<Value*> args;
+      // Print title.
+      invokePrint(builder, edgeProfTitle, args);
+    }
     
     void preprocessModule(Module& M) {
       bbID.clear();
       int id = 0;
+
+      // Add a dummy node here.
+      // This makes edge counting easier
+      // since we do not need to consider the root node case.
+      bbID[make_pair("", "")] = id++;
+
       for (auto f = M.begin(); f != M.end(); ++f) {
         for (auto bb = f->begin(); bb != f->end(); ++bb) {
           auto k = make_pair(f->getName(), bb->getName());
