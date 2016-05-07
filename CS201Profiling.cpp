@@ -21,8 +21,8 @@ using std::unique_ptr;
 using std::pair;
 using std::make_pair;
 
-static const char* SEPERATOR = "===========================\n";
-static const char* SEPERATOR2 = "---------------------------\n";
+static const char* SEPARATOR = "===========================\n";
+static const char* SEPARATOR2 = "---------------------------\n";
 
 cl::opt<bool> dumpBasicBlock(
   "dumpbb",
@@ -94,11 +94,11 @@ namespace {
     //----------------------------------
     bool runOnFunction(Function &F) override {
       functionName = F.getName();
-      outs() << SEPERATOR;
+      outs() << SEPARATOR;
       outs() << "FUNCTION: " << functionName << "\n";
 
       // Display basic blocks.
-      outs() << SEPERATOR2 << "BASIC BLOCKS: " << F.size() << "\n";
+      outs() << SEPARATOR2 << "BASIC BLOCKS: " << F.size() << "\n";
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
         outs() << bb->getName() << "\n";
         if (dumpBasicBlock)
@@ -242,7 +242,7 @@ namespace {
       // Create other strings.
       bbProfTitle = createStaticString(M, "BASIC BLOCK PROFILING:\n");
       edgeProfTitle = createStaticString(M, "\nEDGE PROFILING:\n");
-      profSeperator2 = createStaticString(M, SEPERATOR2);
+      profSeperator2 = createStaticString(M, SEPARATOR2);
     }
 
     Constant* indexArray1D(GlobalVariable* arr, int i) {
@@ -463,7 +463,7 @@ namespace {
       } while (modified);
 
       // Output dominator sets.
-      outs() << SEPERATOR2 << "DOMINATOR SETS:\n";
+      outs() << SEPARATOR2 << "DOMINATOR SETS:\n";
       for (auto bb : dom) {
         outs() << bb.first << " => ";
         for (auto d : bb.second) {
@@ -514,7 +514,7 @@ namespace {
       }
 
       // Output loops.
-      outs() << SEPERATOR2 << "LOOPS: " << loops.size() << "\n";
+      outs() << SEPARATOR2 << "LOOPS: " << loops.size() << "\n";
       int k = 0;
       for (auto l : loops) {
         outs() << "loop" << k << ": ";
