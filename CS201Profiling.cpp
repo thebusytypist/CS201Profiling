@@ -84,16 +84,22 @@ namespace {
       outs() << SEPARATOR;
       outs() << "FUNCTION: " << functionName << "\n";
 
-      // Display basic blocks.
+      preprocessFunction(F);
+      computeLoops(F);
+
+      // Display basic blocks and their predecessors.
       outs() << SEPARATOR2 << "BASIC BLOCKS: " << F.size() << "\n";
       for (auto bb = F.begin(); bb != F.end(); ++bb) {
-        outs() << bb->getName() << "\n";
+        outs() << bb->getName() << " ";
+        outs() << "(preds: ";
+        for (auto pred : preds[bb->getName()]) {
+          outs() << pred << " ";
+        }
+        outs() << ")\n";
+
         if (dumpBasicBlock)
           bb->dump();
       }
-
-      preprocessFunction(F);
-      computeLoops(F);
 
       instrumentFunction(F);
 
