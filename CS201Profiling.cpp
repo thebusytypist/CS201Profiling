@@ -55,6 +55,7 @@ namespace {
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32PtrTy(*context));
+      outputArgTypes.push_back(Type::getInt32PtrTy(*context));
       outputArgTypes.push_back(Type::getInt32Ty(*context));
       outputArgTypes.push_back(Type::getInt32Ty(*context));
       
@@ -122,6 +123,7 @@ namespace {
 
     GlobalVariable* lastBB;
     GlobalVariable* bbCounters;
+    GlobalVariable* edgeFlags;
     GlobalVariable* edgeCounters;
 
     std::vector<GlobalVariable*> bbNames;
@@ -204,6 +206,14 @@ namespace {
         GlobalValue::ExternalLinkage,
         init1D,
         "bbCounters");
+
+      edgeFlags = new GlobalVariable(
+        M,
+        Int2D,
+        false,
+        GlobalVariable::ExternalLinkage,
+        init2D,
+        "edgeFlags");
 
       edgeCounters = new GlobalVariable(
         M,
@@ -296,6 +306,7 @@ namespace {
       Constant* pbbFunctionNames = indexArray1D(bbFunctionNameArray, 0);
       Constant* pbbNames = indexArray1D(bbNameArray, 0);
       Constant* pbbCounters = indexArray1D(bbCounters, 0);
+      Constant* pedgeFlags = indexArray2D(edgeFlags, 0, 0);
       Constant* pedgeCounters = indexArray2D(edgeCounters, 0, 0);
       Constant* pbackEdgeTails = indexArray1D(backEdgeTails, 0);
       Constant* pbackEdgeHeads = indexArray1D(backEdgeHeads, 0);
@@ -310,6 +321,7 @@ namespace {
       args.push_back(pbbFunctionNames);
       args.push_back(pbbNames);
       args.push_back(pbbCounters);
+      args.push_back(pedgeFlags);
       args.push_back(pedgeCounters);
       args.push_back(pbackEdgeTails);
       args.push_back(pbackEdgeHeads);
@@ -327,6 +339,9 @@ namespace {
 
         IRBuilder<> builder(
           bb->getFirstInsertionPt());
+
+        // Mask edgeFlags[tail][head] with 1 to indicate an exist edge.
+        maskEdges(builder, F);
 
         // Update basic block counter.
         increaseCounter(builder, indexArray1D(bbCounters, id));
@@ -355,6 +370,21 @@ namespace {
       }
     }
     
+    void maskEdges(IRBuilder<>& builder, Function& F) {
+      ConstantInt* one = ConstantInt::get(*context, APInt(32, 1, 10));
+      for (auto bb = F.begin(); bb != F.end(); ++bb) {
+        auto t = bb->getTerminator();
+        int n = t->getNumSuccessors();
+        for (int i = 0; i < n; ++i) {
+          auto d = t->getSuccessor(i);
+          int tailID = bbID[make_pair(F.getName(), bb->getName())];
+          int headID = bbID[make_pair(F.getName(), d->getName())];
+          Value* flag = indexArray2D(edgeFlags, tailID, headID);
+          builder.CreateStore(one, flag);
+        }
+      }
+    }
+
     void buildLoops(IRBuilder<>& builder) {
       for (int i = 0; i < (int)loops.size(); ++i) {
         int tail = tails[i];

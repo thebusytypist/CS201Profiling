@@ -10,12 +10,14 @@ extern "C" void outputProfilingResult(
   const char** bbFunctionNames,
   const char** bbNames,
   int* bbCounters,
+  int* edgeFlagsFlat,
   int* edgeCountersFlat,
   int* backEdgeTails,
   int* backEdgeHeads,
   int n, int nloop) {
 
   auto edgeCounters = reinterpret_cast<int (*)[n]>(edgeCountersFlat);
+  auto edgeFlags = reinterpret_cast<int (*)[n]>(edgeFlagsFlat);
 
   printf("\nBASIC BLOCK PROFILING:\n");
   const char* prev = "";
@@ -33,7 +35,7 @@ extern "C" void outputProfilingResult(
   prev = "";
   for (int i = 1; i < n; ++i) {
     for (int j = 1; j < n; ++j) {
-      if (i == j || edgeCounters[i][j] == 0)
+      if (edgeFlags[i][j] == 0)
         continue;
 
       if (strcmp(prev, bbFunctionNames[i]) != 0) {
