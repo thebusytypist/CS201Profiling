@@ -1,6 +1,6 @@
 INPUT=${1}
 LLVM_HOME=~/Workspace
-PREFIX=Release+Debug+Asserts
+PREFIX=Release+Asserts
 if [ $(uname -s) == "Darwin" ]; then
     SHARED_LIB_EXT=dylib;
 else
