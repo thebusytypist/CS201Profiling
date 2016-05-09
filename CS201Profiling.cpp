@@ -532,7 +532,7 @@ namespace {
           StringRef head = t->getSuccessor(i)->getName();
           auto d = dom[bb->getName()];
           if (d.find(head) != d.end()) {
-            outs() << bb->getName() << " -> " << head << "\n";
+            // outs() << bb->getName() << " -> " << head << "\n";
 
             tails.push_back(bbID[make_pair(functionName, bb->getName())]);
             heads.push_back(bbID[make_pair(functionName, head)]);
