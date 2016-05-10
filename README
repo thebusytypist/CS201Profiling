@@ -1,3 +1,7 @@
+Name:  Ounan Ding
+Email: oding001@ucr.edu
+ID:    861194909
+
 Running the pass and the generated IR
 
 $ ./buildAndTest.sh sai # to test support/sai.c
