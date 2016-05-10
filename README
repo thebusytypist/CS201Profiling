@@ -2,6 +2,53 @@ Name:  Ounan Ding
 Email: oding001@ucr.edu
 ID:    861194909
 
+Build and test instructions
+1. Be sure to include clang/llvm executables in your PATH environment variable.
+   During the build process
+   I will use clang++ to generate a LLVM module `utility.bc`
+   from `support/utility.cpp`
+   and link it with the instrumented module using llvm-link.
+
+   A function is inserted into the testee program
+   and it will pass the control to our `utility.cpp`.
+
+   In this support module `utility.cpp`
+   I put code to output profiling results.
+   In this way I can avoid composing many function calls/array indexing
+   in LLVM Pass API, which is tedious.
+
+2. Run `buildAndTest.sh <test filename>` to perform the build and test.
+   The first part is the analysis result.
+   It will output the predecessors, dominator sets, and loops.
+   All of these informations are printed for each function *SEPARATELY*.
+
+   The second part(after the "END OF ANALYSIS" line)
+   shows the profiling result.
+   It will output the basic block/edge/loop profiling result.
+
+3. To dump basic blocks
+   I added a command line `-dumpbb` to our Pass.
+   You can switch this option by passing it to opt.
+   By default it is turned off.
+
+4. Some extra notes on this submission
+4.1 Loop names
+    I assign a unique name for each loops.
+    And I will use this name to identify each loop in the profiling report.
+    You can find these loop names(e.g. "loop0") in the analysis report.
+
+4.2 Edges across the functions
+    Some edges in CFG are across the function boundary.
+    Sometimes the basic blocks may be given a same name, such as "entry".
+    This would cause some confusion when you see "entry -> entry"
+    (This is actually an edge from the "entry" block of the main function
+    to the "entry" block of the function_1 function in our first test sample).
+
+    So I assign an ID for each basic block.
+    You can find this ID at the start of profiling result.
+
+-------------------------------------------------------------------------------
+
 Running the pass and the generated IR
 
 $ ./buildAndTest.sh sai # to test support/sai.c
