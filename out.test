@@ -1,0 +1,63 @@
+llvm[0]: Compiling CS201Profiling.cpp for Release+Asserts build (PIC)
+llvm[0]: Linking Release+Asserts Loadable Module CS201Profiling.so
+===========================
+FUNCTION: main
+---------------------------
+DOMINATOR SETS:
+entry => entry, 
+for.body => entry, for.body, for.cond, if.end, 
+for.cond => entry, for.cond, if.end, 
+for.end => entry, for.cond, for.end, if.end, 
+for.inc => entry, for.body, for.cond, for.inc, if.end, 
+if.else => entry, if.else, 
+if.end => entry, if.end, 
+if.then => entry, if.then, 
+---------------------------
+LOOPS: 1
+loop0: for.cond, for.body, for.inc, 
+---------------------------
+BASIC BLOCKS: 8
+entry (preds: )
+if.then (preds: entry )
+if.else (preds: entry )
+if.end (preds: if.then if.else )
+for.cond (preds: if.end for.inc )
+for.body (preds: for.cond )
+for.inc (preds: for.body )
+for.end (preds: for.cond )
+
+END OF ANALYSIS
+
+Enter a number: You entered: 7
+7 Hello World 100
+j: 49 
+
+BASIC BLOCK PROFILING:
+---------------------------
+FUNCTION main
+entry (ID: 1): 1
+if.then (ID: 2): 0
+if.else (ID: 3): 1
+if.end (ID: 4): 1
+for.cond (ID: 5): 8
+for.body (ID: 6): 7
+for.inc (ID: 7): 7
+for.end (ID: 8): 1
+
+EDGE PROFILING:
+---------------------------
+FUNCTION main
+entry (ID: 1) -> if.then (ID: 2): 0
+entry (ID: 1) -> if.else (ID: 3): 1
+if.then (ID: 2) -> if.end (ID: 4): 0
+if.else (ID: 3) -> if.end (ID: 4): 1
+if.end (ID: 4) -> for.cond (ID: 5): 1
+for.cond (ID: 5) -> for.body (ID: 6): 7
+for.cond (ID: 5) -> for.end (ID: 8): 1
+for.body (ID: 6) -> for.inc (ID: 7): 7
+for.inc (ID: 7) -> for.cond (ID: 5): 7
+
+LOOP PROFILING:
+---------------------------
+FUNCTION main
+loop0: 7

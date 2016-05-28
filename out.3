@@ -1,0 +1,71 @@
+llvm[0]: Compiling CS201Profiling.cpp for Release+Asserts build (PIC)
+llvm[0]: Linking Release+Asserts Loadable Module CS201Profiling.so
+===========================
+FUNCTION: function_1
+---------------------------
+DOMINATOR SETS:
+entry => entry, 
+while.body => entry, while.body, while.cond, 
+while.body3 => entry, while.body, while.body3, while.cond, while.cond1, 
+while.cond => entry, while.cond, 
+while.cond1 => entry, while.body, while.cond, while.cond1, 
+while.end => entry, while.body, while.cond, while.cond1, while.end, 
+while.end5 => entry, while.cond, while.end5, 
+---------------------------
+LOOPS: 2
+loop0: while.cond1, while.body3, 
+loop1: while.cond, while.body, while.cond1, while.body3, while.end, 
+---------------------------
+BASIC BLOCKS: 7
+entry (preds: )
+while.cond (preds: entry while.end )
+while.body (preds: while.cond )
+while.cond1 (preds: while.body while.body3 )
+while.body3 (preds: while.cond1 )
+while.end (preds: while.cond1 )
+while.end5 (preds: while.cond )
+===========================
+FUNCTION: main
+---------------------------
+DOMINATOR SETS:
+entry => entry, 
+---------------------------
+LOOPS: 0
+---------------------------
+BASIC BLOCKS: 1
+entry (preds: )
+
+END OF ANALYSIS
+
+
+BASIC BLOCK PROFILING:
+---------------------------
+FUNCTION function_1
+entry (ID: 1): 1
+while.cond (ID: 2): 11
+while.body (ID: 3): 10
+while.cond1 (ID: 4): 110
+while.body3 (ID: 5): 100
+while.end (ID: 6): 10
+while.end5 (ID: 7): 1
+---------------------------
+FUNCTION main
+entry (ID: 8): 1
+
+EDGE PROFILING:
+---------------------------
+FUNCTION function_1
+entry (ID: 1) -> while.cond (ID: 2): 1
+while.cond (ID: 2) -> while.body (ID: 3): 10
+while.cond (ID: 2) -> while.end5 (ID: 7): 1
+while.body (ID: 3) -> while.cond1 (ID: 4): 10
+while.cond1 (ID: 4) -> while.body3 (ID: 5): 100
+while.cond1 (ID: 4) -> while.end (ID: 6): 10
+while.body3 (ID: 5) -> while.cond1 (ID: 4): 100
+while.end (ID: 6) -> while.cond (ID: 2): 10
+
+LOOP PROFILING:
+---------------------------
+FUNCTION function_1
+loop0: 100
+loop1: 10
